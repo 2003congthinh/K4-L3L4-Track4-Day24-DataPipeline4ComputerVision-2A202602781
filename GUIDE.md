@@ -7,8 +7,7 @@
 
 ```bash
 cp .env.example .env                  # mở .env, đặt LAB_STUDENT_ID=<MSSV của bạn>
-# tải day09-data.zip (đường dẫn ở README mục 3), giải nén tại thư mục gốc lab:
-unzip day09-data.zip && rm day09-data.zip
+unzip dataset/day09-data.zip           # gói dữ liệu nằm sẵn trong repo; giải nén tại thư mục gốc lab
 python3 scripts/check_data.py         # mọi file phải ĐÚNG
 docker compose --profile orchestrate up -d --build
 docker compose ps                     # chờ airflow, minio, postgres đều healthy

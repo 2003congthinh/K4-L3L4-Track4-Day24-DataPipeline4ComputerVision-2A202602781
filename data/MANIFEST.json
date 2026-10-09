@@ -2,7 +2,7 @@
   "zip_name": "day09-data.zip",
   "zip_sha256": "3f6e8a36c0e4ac0b6c9ca3124abd9b9f4008acacb97f177a672c0551bda85542",
   "zip_bytes": 27791983,
-  "url": "",
+  "url": "https://github.com/VinUni-AI20k/K4-L3L4-Track4-DataPipeline4ComputerVision/raw/main/dataset/day09-data.zip",
   "source": "yaak-ai/L2D-v3 (Apache-2.0), https://huggingface.co/datasets/yaak-ai/L2D-v3",
   "files": {
     "drive_a.mp4": {

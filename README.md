@@ -77,21 +77,22 @@ Dữ liệu cắt từ bộ **L2D-v3** của Yaak (giấy phép **Apache 2.0**),
 | Bảng episode (thời điểm trong video) | `meta/episodes/chunk-000/file-000.parquet` |
 | Telemetry theo khung hình | `data/chunk-000/file-000.parquet` … `file-003.parquet` |
 | Định dạng LeRobot v3 | https://huggingface.co/docs/lerobot/lerobot-dataset-v3 |
-| **Gói dữ liệu của lab** (`day09-data.zip`, 28 MB) | **`<GIẢNG VIÊN ĐIỀN ĐƯỜNG DẪN TẢI Ở ĐÂY>`** |
+| **Gói dữ liệu của lab** (`day09-data.zip`, 28 MB) | nằm sẵn trong repo này: **`dataset/day09-data.zip`** · tải trực tiếp: https://github.com/VinUni-AI20k/K4-L3L4-Track4-DataPipeline4ComputerVision/raw/main/dataset/day09-data.zip |
 
 Bạn **không cần tải bộ L2D-v3 gốc** (479 GB): giảng viên đã cắt hai đoạn video khoảng 5 phút (đọc theo byte range) và đóng gói thành `day09-data.zip`.
 
-**Đặt dữ liệu đúng chỗ (3 bước):**
+**Đặt dữ liệu đúng chỗ (2 bước):**
 
 ```bash
-# 1. Tải day09-data.zip từ đường dẫn ở trên, đặt vào thư mục gốc của lab
-# 2. Giải nén NGAY TẠI thư mục gốc (zip đã chứa sẵn thư mục data/):
-unzip day09-data.zip && rm day09-data.zip
-# 3. Kiểm tra: mọi file phải báo ĐÚNG
+# 1. Giải nén NGAY TẠI thư mục gốc của lab (zip đã chứa sẵn thư mục data/):
+unzip dataset/day09-data.zip
+# 2. Kiểm tra: mọi file phải báo ĐÚNG
 python3 scripts/check_data.py
 ```
 
-Nếu giảng viên đã điền đường dẫn vào `data/MANIFEST.json`, bạn có thể dùng `python3 scripts/fetch_data.py` để tự tải, tự kiểm tra sha256 và giải nén. Phương án dự phòng khi không tải được: `python3 scripts/build_data.py` tự dựng từ nguồn công khai (cần `python3`, `numpy`, `pyarrow`, `ffmpeg`, mạng, khoảng 5 phút; số liệu có thể lệch nhẹ vài khung hình so với bản chuẩn).
+File zip nằm sẵn trong repo của lớp. Khi bạn copy thư mục lab sang **repo riêng** để nộp bài, zip và dữ liệu **không** được đưa lên (đã có trong `.gitignore`); `check_submission.py` báo FAIL nếu bạn lỡ commit chúng.
+
+Nếu chỉ có mỗi thư mục lab mà không có file zip, dùng `python3 scripts/fetch_data.py`: nó tải từ đường dẫn trong `data/MANIFEST.json`, tự kiểm tra sha256 và giải nén. Phương án dự phòng khi không tải được: `python3 scripts/build_data.py` tự dựng từ nguồn công khai (cần `python3`, `numpy`, `pyarrow`, `ffmpeg`, mạng, khoảng 5 phút; số liệu có thể lệch nhẹ vài khung hình so với bản chuẩn).
 
 | File trong `data/` | Nội dung |
 |---|---|
@@ -198,6 +199,7 @@ Lệnh ngắn trong `scripts/lab.sh`:
 Day9-lab/
 ├── README.md  GUIDE.md  RUBRIC.md  REPORT.md
 ├── .env.example                MSSV của bạn (sao chép thành .env)
+├── dataset/day09-data.zip      gói dữ liệu (chỉ có trong repo của lớp)
 ├── data/                       MANIFEST.json + dữ liệu bạn giải nén vào
 ├── report/evidence/            bằng chứng tự ghi ra từ các thí nghiệm
 ├── report/screenshots/         ảnh chụp bạn nộp (airflow_graph.png, minio_lake.png, metabase_dashboard.png)
@@ -213,7 +215,7 @@ Day9-lab/
 
 | Triệu chứng | Nguyên nhân và cách xử lý |
 |---|---|
-| `check_data.py` báo THIẾU | Chưa giải nén zip, hoặc giải nén sai chỗ: `data/drive_a.mp4` phải nằm ngay trong thư mục `data/` của lab. |
+| `check_data.py` báo THIẾU | Chưa chạy `unzip dataset/day09-data.zip` ở thư mục gốc lab, hoặc giải nén sai chỗ: `data/drive_a.mp4` phải nằm ngay trong thư mục `data/` của lab. |
 | `mkdir /host_mnt/Volumes/...: file exists` | Thư mục lab nằm trên ổ ngoài. Chuyển vào thư mục home, hoặc khởi động lại Docker Desktop. |
 | Airflow chưa vào được sau khi `up` | Cần 1–2 phút để khởi tạo; chờ `healthy` ở `docker compose ps`. |
 | Cổng 5432 bị chiếm | Postgres của lab mở ở cổng **5433** trên máy bạn (bên trong Docker vẫn là 5432). |

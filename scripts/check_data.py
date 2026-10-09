@@ -34,8 +34,8 @@ def main() -> int:
         print(line)
     if bad:
         print("\nCách lấy dữ liệu:")
-        print(f"  1. Tải {m.get('zip_name', 'day09-data.zip')} từ đường dẫn giảng viên cung cấp: {m.get('url', '(xem README.md mục 3)')}")
-        print("  2. Giải nén NGAY TẠI thư mục gốc của lab (zip đã chứa sẵn thư mục data/):  unzip day09-data.zip")
+        print("  1. Giải nén gói dữ liệu NGAY TẠI thư mục gốc của lab (zip chứa sẵn thư mục data/):  unzip dataset/day09-data.zip")
+        print(f"     (không có file đó? tải từ {m.get('url', 'README.md mục 3')})")
         print("  Hoặc: python3 scripts/fetch_data.py   (tự tải và giải nén nếu giảng viên đã điền đường dẫn)")
         print("  Dự phòng (cần python3, numpy, pyarrow, ffmpeg và mạng, ≈ 5 phút): python3 scripts/build_data.py")
         print("    (dữ liệu tự dựng có thể lệch nhẹ vài khung hình so với bản chuẩn; mọi kiểm tra vẫn dùng được)")

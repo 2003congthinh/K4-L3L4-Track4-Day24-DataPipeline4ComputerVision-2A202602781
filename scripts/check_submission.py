@@ -126,10 +126,10 @@ def main():
         dirty = sh("git", "status", "--porcelain").stdout.strip()
         check("PASS" if not dirty else "WARN", "mọi thay đổi đã commit", f"{len(dirty.splitlines())} file chưa commit" if dirty else "")
         tracked = [x for x in sh("git", "ls-files").stdout.split("\n") if x]
-        bad = [x for x in tracked if (x.startswith("work/") and not x.endswith(".gitkeep")) or x.endswith((".tar", ".duckdb", ".mp4"))
+        bad = [x for x in tracked if (x.startswith("work/") and not x.endswith(".gitkeep")) or x.endswith((".tar", ".duckdb", ".mp4", ".zip"))
                or (x.startswith("data/") and x.endswith((".csv", ".mp4")))]
         big = [x for x in tracked if (ROOT / x).exists() and (ROOT / x).stat().st_size > 50 * 1024 * 1024]
-        check("PASS" if not bad and not big else "FAIL", "không commit dữ liệu data/, work/, .tar, .duckdb, hoặc file > 50 MB", ", ".join((bad + big)[:4]))
+        check("PASS" if not bad and not big else "FAIL", "không commit dữ liệu data/, file .zip, work/, .tar, .duckdb, hoặc file > 50 MB", ", ".join((bad + big)[:4]))
         leaked = [x for x in tracked if (ROOT / x).is_file() and (ROOT / x).stat().st_size < 2_000_000 and x.endswith(
             (".py", ".md", ".yml", ".yaml", ".sql", ".sh", ".txt", ".env", ".json")) and SECRETS.search((ROOT / x).read_text(errors="ignore"))]
         check("PASS" if not leaked else "FAIL", "không có khoá bí mật hay token thật trong repo", ", ".join(leaked[:4]))
