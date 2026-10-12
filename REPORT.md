@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| Họ và tên | `<điền>` |
-| MSSV (đúng bằng `LAB_STUDENT_ID` trong `.env`) | `<điền>` |
-| GitHub | `<điền: tên tài khoản>` |
-| Trip dùng cho bài tập sập và chạy lại (xem GUIDE, bước 5) | `<điền: trip-xxxxx>` |
+| Họ và tên | Nguyễn Công Thịnh |
+| MSSV (đúng bằng `LAB_STUDENT_ID` trong `.env`) | `2A202602781` |
+| GitHub | `2003congthinh` |
+| Trip dùng cho bài tập sập và chạy lại (xem GUIDE, bước 5) | `trip-06570` |
 
 ## Kết quả cuối
 
@@ -21,7 +21,16 @@
 ### Câu 1
 Liệt kê **ít nhất 4 khác biệt** giữa telemetry nguồn A và nguồn B mà bạn thấy ở bronze. Vì sao pipeline giữ **mỗi nguồn một bảng bronze** và để mọi cột ở dạng chữ, thay vì gộp và ép kiểu ngay?
 
-(trả lời ở đây)
+Khác biệt mình thấy ở `lake.bronze_raw_telemetry_a` và `lake.bronze_raw_telemetry_b` (đầu ra `step 1`):
+
+1. **Tên cột khác hẳn**: A dùng `ts_utc, speed_mps, heading_deg, lat, lon, alt_m, acc_x, acc_y, gas, brake, steer`; B dùng `timestamp_ms, spd_kmh, hdg, latitude, longitude, altitude, ax, ay, throttle_pct, brake_pct, steering`.
+2. **Đơn vị tốc độ**: A là m/s (dòng đầu `1.213`), B là km/h (dòng đầu `55.11`).
+3. **Kiểu thời gian**: A là chuỗi ISO-8601 UTC (`2025-10-07T08:00:00.014Z`), B là epoch mili-giây (`1759933801509`).
+4. **Bàn đạp**: A là tỷ lệ 0..1 (`gas 0.028`), B là phần trăm (`throttle_pct 2.0`).
+5. **Đồng hồ**: `bronze.video_files` ghi `telemetry_clock_offset_ms` = 0 cho drive A nhưng **1500** cho drive B (thiết bị B chạy nhanh hơn video 1,5 s).
+6. Số dòng khác nhau: 3021 (A) và 3234 (B), vì drive B dài hơn (321,4 s so với 300,1 s).
+
+Vì sao **mỗi nguồn một bảng** và **mọi cột là chữ**: bronze là bản sao nguyên trạng, chỉ thêm. Gộp hai nguồn thì phải chọn một schema, tức là đã biến đổi dữ liệu ngay ở bronze. Nếu luật đổi đơn vị hay độ lệch bị sai thì ta mất bản gốc để sửa. Giữ dạng chữ thì việc nạp không bao giờ hỏng vì một ô lạ: `typeof(speed_mps)` là `VARCHAR`, và 30 ô tốc độ rỗng vẫn là `''` chứ không thành `NaN`/0. Mọi việc ép kiểu dồn về dbt staging, nơi có thể chạy lại bất cứ lúc nào từ bronze. Các cột lineage `_batch_id` (`17f098d6bbb1` = 12 ký tự đầu sha256 của file A), `_row_no`, `_source_file` cho phép truy một dòng silver về đúng dòng CSV. Mình cũng kiểm tra tính idempotent: lần nạp thứ hai báo `already present`, và `cli history bronze.raw_telemetry_a` chỉ có **một commit** (version 0, 3021 dòng).
 
 ## Bước 2 · Silver telemetry
 
