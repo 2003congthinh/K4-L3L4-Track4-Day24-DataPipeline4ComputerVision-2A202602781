@@ -37,12 +37,26 @@ Vì sao **mỗi nguồn một bảng** và **mọi cột là chữ**: bronze là
 ### Câu 2
 Pipeline đưa hai nguồn về một schema như thế nào (đơn vị, kiểu thời gian, **độ lệch đồng hồ**)? Bằng chứng nào trong kết quả bước 2 cho thấy đã đúng? Dán bảng quarantine của bạn (số dòng theo từng lý do, từng drive) và giải thích vì sao dòng lỗi vào `rejects` thay vì bị xoá.
 
-(trả lời ở đây)
+Chuẩn hoá nằm ở hai view staging. `stg_telemetry_a` chỉ ép kiểu, vì A đã là m/s, ISO và không lệch đồng hồ. `stg_telemetry_b` đổi tên cột về đúng tên của A, đổi `spd_kmh / 3.6` → m/s, đổi bàn đạp `% / 100` → 0..1 và đổi thời gian bằng `to_timestamp((timestamp_ms - offset_ms) / 1000)`. Trong đó `offset_ms = 1500` lấy từ `bronze.video_files`, tức từ `sources.json` lúc ingest. Sau đó `silver_telemetry_classified` gộp hai nguồn (`union all by name`) và gán cho từng dòng một `reject_reason`.
+
+Bằng chứng ở bước 2 của mình:
+- B bắt đầu lúc `2025-10-08 14:30:00.009` (cột `bat_dau`), khớp giờ bắt đầu video `14:30:00` (lệch 9 ms). Nếu chưa trừ 1500 ms thì giá trị này sẽ là `14:30:01.509`.
+- Tốc độ tối đa sau chuẩn hoá: A 71 km/h, B 100 km/h. Cả hai đều hợp lý, nghĩa là B đã được chia 3,6 đúng (không còn ra 360 km/h).
+- verify module 2: **7/7**, trong đó có `2968+53=3021` (A) và `3181+53=3234` (B).
+
+| drive | duplicate | speed_missing | speed_out_of_range | sạch |
+|---|---|---|---|---|
+| drive_a | 20 | 30 | 3 | 2968 |
+| drive_b | 20 | 30 | 3 | 3181 |
+
+Dòng lỗi vào `silver_telemetry_rejects` kèm lý do, `_batch_id` và `_row_no` thay vì bị xoá. Lý do thứ nhất là kiểm toán được: luôn có `sạch + cách ly = nhận về`, nên biết chắc không dòng nào biến mất âm thầm. Thứ hai là có thể sửa và chạy lại: nếu luật sai (ví dụ ngưỡng tốc độ) thì vẫn còn dòng gốc để phục hồi. Thứ ba là thấy được lỗi của nguồn: 3 dòng `250 m/s` ở `_row_no` 400/1700/2500 của cả hai drive là lỗi cảm biến lặp lại cần báo cho đội phần cứng.
 
 ### Câu 3
 Vì sao test `max_gap_ms` là `warn` còn `in_range` là `error`? Kết quả thí nghiệm `break-gate` của bạn (`break_gate.json`): test nào bắt được, bao nhiêu dòng, và điều đó cho biết gì về vai trò của "cổng chất lượng"?
 
-(trả lời ở đây)
+`in_range` (tốc độ 0..70 m/s) là `error` vì nó bảo vệ một **bất biến**. Một tốc độ 250 m/s lọt vào silver thì sẽ đi thẳng vào nhãn huấn luyện (`speed_mps` có trong gold), làm hỏng mô hình một cách âm thầm, nên phải dừng pipeline. `max_gap_ms` là `warn` vì nó đo **độ đầy đủ**. Cảm biến mất tín hiệu là chuyện có thật và đã biết; dữ liệu còn lại vẫn đúng, chỉ thưa hơn, nên báo để người vận hành biết nhưng không chặn. Ở lần chạy của mình test này WARN với đúng 2 khoảng hở: `drive_a` 3073 ms (tới `08:02:02.189`) và `drive_b` 3124 ms (tới `14:31:32.712`). Hai khoảng này trùng với 30 dòng `speed_missing` đã bị cách ly (A: 08:01:59.2→08:02:02.1). Vậy chính quarantine tạo ra lỗ hổng, và test warn báo lại điều đó.
+
+Thí nghiệm `break-gate` (`break_gate.json`): nới `max_speed_mps` lên 1000 thì `dbt test` cho `PASS=5 WARN=1 ERROR=1`. Test `in_range_silver_telemetry_speed_mps__70__0` **bắt được 6 dòng**, đúng 3 + 3 dòng 250 m/s mà luật làm sạch đã bị nới cho lọt qua. Khôi phục luật thì trở lại `PASS=6 WARN=1 ERROR=0`. Điều này cho thấy cổng chất lượng là **lớp phòng thủ thứ hai, độc lập** với luật làm sạch: luật biến đổi có thể bị sửa sai (do người hoặc do một biến `--vars`), nhưng test viết riêng trong `schema.yml` vẫn chặn. Trong DAG, `dbt_test_silver` đỏ thì `dbt_run_gold` và các task sau không chạy, nên dữ liệu xấu không tới gold hay warehouse.
 
 ## Bước 3 · Silver frames
 
