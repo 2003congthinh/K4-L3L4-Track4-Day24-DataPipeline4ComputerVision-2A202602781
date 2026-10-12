@@ -96,17 +96,34 @@ Mình chọn **giữ ngưỡng 2**. Ngưỡng 0 chỉ bắt ảnh trùng tuyệt
 ### Câu 6
 Dựa vào `leakage.json`: chia theo khung hình làm bao nhiêu trip bị chia cắt, so với chia theo trip? Vì sao điều này làm điểm kiểm thử đẹp một cách giả tạo?
 
-(trả lời ở đây)
+`leakage.json` của mình: có **1019** khung đáng dùng thuộc **26** trip. Khi chia **theo khung hình** (băm `frame_id`, 70/15/15), **26/26 trip** bị xé ra nhiều split và **26/26 trip có khung ở cả train lẫn test**. Khi chia **theo trip** (gold của pipeline) thì **0** trip bị chia cắt, và test dbt `no_straddle` cũng PASS.
+
+Mỗi trip trung bình khoảng 39 khung, mà chia ngẫu nhiên theo khung thì gần như chắc chắn trip nào cũng có khung rơi vào test. Hai khung liền nhau chỉ cách 0,5 s, gần như cùng một cảnh (cùng đường, cùng xe phía trước, cùng ánh sáng). Nếu khung t nằm ở train và khung t+0,5 s nằm ở test, mô hình chỉ cần "nhớ" cảnh là đoán đúng. Điểm test khi đó đo khả năng **ghi nhớ** chứ không đo khả năng **tổng quát hoá** sang một con đường mới. Điểm cao giả tạo nên ta tưởng mô hình tốt, rồi nó hỏng khi lên xe thật. Chia theo trip (theo cảnh) buộc test là những đoạn đường mô hình **chưa từng thấy**. Ở split của mình, test là `trip-07774`, `trip-09608` (drive A) và `trip-01037`, `trip-04324` (drive B).
 
 ### Câu 7
 Vì sao `dataset_version` là **băm nội dung** chứ không phải ngày giờ hay số đếm? Hai lần chạy liên tiếp cho kết quả gì? Vì sao `dataset_version` của bạn **khác** bạn bè dù cùng dữ liệu (liên hệ MSSV)?
 
-(trả lời ở đây)
+`dataset_version = sha256` của danh sách `frame_id|split` đã sắp xếp, lấy 12 ký tự đầu. Nó là **hàm của nội dung**: cùng tập khung và cùng cách chia thì ra cùng version, khác dù chỉ một khung hay một split thì ra version khác. Ngày giờ thì đổi mỗi lần chạy dù dữ liệu y hệt, còn số đếm tăng dần thì phụ thuộc vào việc ai chạy bao nhiêu lần. Cả hai đều không trả lời được câu "hai mô hình này có được huấn luyện trên cùng dữ liệu không?". Băm nội dung thì trả lời được, chạy lại ở máy khác vẫn ra cùng số, và nó cũng là tên thư mục `gold/datasets/<version>/` nên ghi lại không bao giờ đè lên một dataset khác.
+
+Kết quả của mình: `step all --reset` lần đầu cho **`7a789a787ab8`**; chạy lại `step 4` và `cli export-dataset` vẫn ra **`7a789a787ab8`** (cùng `manifest_sha256 4db243f2…`). Khi mình đổi MSSV sang `2A202602782` và chạy lại `step 4`, version thành **`1888ff343d4d`**, split thành 675/167/177 khung (với MSSV của mình là 643/215/161). Đặt lại `2A202602781` thì version quay về đúng **`7a789a787ab8`**. Lý do là `gold_dataset_frames` xếp trip trong mỗi drive theo `md5(trip_id || LAB_STUDENT_ID)`: MSSV là "muối" của phép xáo trộn. Cùng dữ liệu, cùng luật lọc (vẫn 1019 khung, vẫn 18/4/4 trip), nhưng **trip nào vào train/val/test** thì khác, nên danh sách `frame_id|split` khác và hash khác. Mỗi bạn có một version riêng, và giảng viên chạy lại với MSSV của mình sẽ ra đúng `7a789a787ab8`.
 
 ### Câu 8
 Đọc phần `lineage` trong `manifest.json` của dataset bạn. Trả lời "dataset này được tạo từ dữ liệu nào?" bằng chính nội dung đó. Nếu một người hỏi 3 tháng sau, thông tin nào giúp tái tạo lại đúng dataset này?
 
-(trả lời ở đây)
+Phần `lineage` trong `gold/datasets/7a789a787ab8/manifest.json` của mình:
+
+```json
+"lineage": {
+  "bronze.raw_telemetry_a": 0, "bronze.raw_telemetry_b": 0, "bronze.trips_raw": 0, "bronze.video_files": 1,
+  "silver.frames": 27, "silver.telemetry": 0, "silver.frames_flagged": 0, "silver.frame_telemetry": 0,
+  "input_video_sha256": {
+    "drive_a": "636ba1a98dfc5ba665d1c935e1d2064e69f4df360ff9ffbd15795957d5e7e9aa",
+    "drive_b": "bfa62703f645ff77a8578ae3fc74a00881140d38a404d43c8e2af265bbee9fdc" } }
+```
+
+Đọc ra: dataset này gồm 1019 khung (436 từ drive A, 583 từ drive B). Nó được tạo từ **hai file video có đúng hai sha256 trên** (trùng sha256 trong `data/MANIFEST.json`) và từ telemetry bronze ở version 0 của mỗi nguồn. Khung hình lấy từ `silver.frames` **version 27**: 26 lần ghi theo trip (version 0–25) cộng 2 lần mình chạy lại `trip-06570` trong thí nghiệm idempotent, nên version tăng nhưng nội dung không đổi. Cờ và join lấy từ `silver.frames_flagged`/`frame_telemetry` version 0. Luật lọc nằm trong `rules`: bỏ `is_black, is_blurry, is_near_dup, not sync_ok`, chia theo trip, phân tầng theo drive, thứ tự md5.
+
+Nếu ba tháng sau có người hỏi, để tái tạo đúng dataset cần: (1) hai video theo sha256 và các CSV gốc (bronze giữ nguyên, có `_batch_id`); (2) các version Delta ở trên, đọc bằng time travel (`DeltaTable(..., version=27)`) kể cả khi bảng đã được ghi tiếp; (3) commit git của mã `dbt/` (ngưỡng trong `dbt_project.yml`: `dark_luma 12`, `blur_var 40`, `dup_hamming 2`, `sync_tol_ms 150`, `split 0.70/0.15`); (4) **MSSV `2A202602781`** dùng làm muối khi chia. Cuối cùng, so `dataset_version` và `manifest_sha256` để chứng minh đã tái tạo đúng.
 
 ## Bước 5 · Điều phối và phục vụ
 
