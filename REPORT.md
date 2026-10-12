@@ -130,12 +130,24 @@ Nếu ba tháng sau có người hỏi, để tái tạo đúng dataset cần: (
 ### Câu 9
 Mô tả chính xác điều xảy ra khi trip của bạn sập rồi chạy lại: bao nhiêu task chuyển đỏ, bao nhiêu task `upstream_failed`, bạn clear gì, dữ liệu có nhân đôi không, `dataset_version` có đổi không? Bằng chứng (ảnh, số) là gì?
 
-(trả lời ở đây)
+Trip của mình là `202602781 % 26 = 17` → **`trip-06570`**. MSSV `2A202602781` có chữ `A` nên lệnh `int(MSSV)` trong GUIDE báo lỗi; mình dùng phần số `202602781`. Các bước: đặt `LAB_FAIL_ONCE=trip-06570`, `docker compose up -d`, trigger `day09_reset` (run `reset_before_crash`), rồi trigger `day09_video_pipeline` (run `crash_run`).
+
+- **Đúng 1 task đỏ**: `silver_frames` **map_index 17**. Log có dòng `RuntimeError: simulated crash while extracting trip-06570; run it again` (ảnh `crash_2_red_task_log.png`).
+- **7 task `upstream_failed`**: `dbt_run_silver, dbt_test_silver, dbt_run_gold, dbt_test_gold, publish_lake, export_dataset, publish_warehouse`. Còn **29 task xanh**: 3 bronze, `trip_commands` và 25 trip khác, vì mỗi trip là một task độc lập (ảnh `crash_1_graph_red.png`).
+- Mình **chỉ clear task đỏ** (kèm downstream của nó, chỉ các task failed/upstream_failed). Kết quả: chỉ `silver_frames/map_index=17` có `attempt=2`, 7 task phía sau chạy lần đầu, **25 trip xanh không chạy lại**. Tổng cộng 8 task chạy sau khi clear, và DAG chuyển **xanh 37/37** (ảnh `crash_3_graph_green_after_clear.png`).
+- **Không nhân đôi**: `lake.silver_frames` có **1246 dòng / 1246 `frame_id` khác nhau**, trong đó `trip-06570` có 45 dòng (đúng bằng lúc chạy bình thường). `history silver.frames` chỉ có 26 lần ghi (version 0–25): lần chạy bị sập **không để lại commit nào**, vì crash xảy ra trước khi ghi, và lần chạy lại thì overwrite đúng partition của trip đó.
+- `scripts/lab.sh verify` sau đó: **27/27**, `dataset_version` **vẫn là `7a789a787ab8`** (không đổi, đúng như kỳ vọng vì nội dung giống hệt).
+
+Xong, mình xoá dòng `LAB_FAIL_ONCE` khỏi `.env` và chạy lại `docker compose --profile orchestrate up -d`.
 
 ### Câu 10
 Nâng từ 2 drive lên **500 xe mỗi ngày**: ba thành phần nào của pipeline này sẽ vỡ đầu tiên, và bạn thay bằng gì (nối với slide 12, 22, 23)?
 
-(trả lời ở đây)
+Mình ước lượng bằng số của chính lab: 26 trip (621,5 s video) được tách khung trong khoảng **123 s** ở `full_run_1`, tức khoảng 5 lần nhanh hơn thời gian thực, chạy tuần tự từng trip. 500 xe × khoảng 8 giờ/ngày là khoảng 14,4 triệu giây video/ngày, nên với kiến trúc này cần khoảng **33 ngày máy cho mỗi ngày dữ liệu**. Ba thành phần sẽ vỡ trước:
+
+1. **Bước tách khung (`frames.extract_trip`)**. Mỗi trip tải **cả video của drive** về (26 lần cho mỗi drive), giải mã bằng một FFmpeg CPU trong **một** container Airflow (`LocalExecutor`, `parallelism 2`, `max_active_tis_per_dagrun=1`), rồi `put_object` từng JPG nhỏ (≈ 29 triệu object mỗi ngày ở 2 khung/giây). Mình sẽ thay bằng: cắt video thành segment ngay lúc ingest; giải mã phân tán trên một cụm worker (Ray/Spark hoặc job Kubernetes, có thể dùng GPU NVDEC); ghi khung thành shard lớn (WebDataset/tar hoặc Parquet chứa ảnh) thay vì hàng triệu file nhỏ. Video ở object storage còn bảng chỉ giữ con trỏ, như slide 23–24.
+2. **Lớp biến đổi DuckDB + dbt**. DuckDB là **một file, một tiến trình ghi** (`threads: 1`). Mọi model silver/gold là `table` được build lại toàn bộ, và `publish_lake` **overwrite cả bảng** mỗi lần chạy, nên chi phí tăng theo toàn bộ lịch sử chứ không theo dữ liệu mới. Mình sẽ thay bằng model **incremental** theo partition (ngày, xe) với `MERGE` vào Delta, chạy trên engine phân tán (Spark, Trino hoặc Databricks SQL), tức phần ELT trên lakehouse ở slide 22.
+3. **Điều phối và ingest**. Một mapped task cho mỗi trip, nhân với 500 xe, sẽ thành hàng chục nghìn task mỗi lần chạy, quá tải scheduler và metadata DB Postgres dùng chung. Ingest thì kiểm tra trùng bằng cách đọc **toàn bộ** cột `_batch_id` (tăng tuyến tính), và đọc CSV bằng Python. Mình sẽ thay bằng ingest theo sự kiện (xe upload xong thì đẩy message qua hàng đợi Kafka/SQS, như phần ingestion ở slide 12), điều phối theo partition ngày–xe với `CeleryExecutor`/`KubernetesExecutor`, và kiểm tra idempotent bằng bảng chỉ mục sha256 có khoá (hoặc `MERGE` theo `_batch_id`). MinIO một node cũng phải lên S3 hoặc cụm phân tán.
 
 ## Câu hỏi riêng của bạn trên Metabase
 
