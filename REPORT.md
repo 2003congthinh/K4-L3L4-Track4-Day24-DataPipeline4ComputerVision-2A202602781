@@ -63,7 +63,12 @@ Thí nghiệm `break-gate` (`break_gate.json`): nới `max_speed_mps` lên 1000 
 ### Câu 4
 Dựa vào `idempotency.json`: số dòng trước và sau hai lần chạy lại, và khi ghi kiểu `append`. Vì sao Delta `overwrite` theo partition (một trip) an toàn hơn xoá rồi ghi lại, nhất là khi giữa chừng có lỗi?
 
-(trả lời ở đây)
+Mình chạy `exp idempotency --trip trip-06570` (trip của mình). Kết quả trong `idempotency.json`:
+- Cách của pipeline (Delta `overwrite` với `predicate trip_id = 'trip-06570'`): **trước 1246 dòng, dấu vân tay `6c7480dfde7e`**. Sau **hai lần** chạy lại partition: **vẫn 1246 dòng, vẫn `6c7480dfde7e`**, `unchanged: true`.
+- Cách sai (`append` hai lần, chỉ trip này): trip có 45 khung nhưng bảng thử có **90 dòng**, tức nhân đôi (2x).
+- `cli history silver.frames`: version 26 và 27 đều là `WRITE` với `predicate trip_id = 'trip-06570'` và 45 dòng. Mỗi lần chạy lại là một commit **thay thế** 45 dòng đó, không cộng thêm.
+
+Vì sao `overwrite` theo partition an toàn hơn "xoá rồi ghi lại": với Delta, xoá các file cũ của trip và thêm file mới nằm trong **một commit nguyên tử** vào `_delta_log`. Người đọc chỉ thấy phiên bản trước hoặc phiên bản sau, không bao giờ thấy trạng thái nửa vời. Nếu làm hai bước `DELETE` rồi `INSERT` mà job sập ở giữa (đúng kịch bản `LAB_FAIL_ONCE`), bảng sẽ **mất** trip đó cho tới khi có người sửa, và người đọc ở giữa thấy dữ liệu thiếu. Nếu sập trong lúc `INSERT` nhiều file thì có thể còn ghi một phần. Với overwrite có predicate, sập trước khi commit nghĩa là bảng vẫn y như cũ; chạy lại thì cho đúng kết quả cũ. Ngoài ra predicate giới hạn phạm vi ghi trong **một** trip, nên chạy lại `trip-06570` không động tới 25 trip còn lại, và phiên bản cũ vẫn còn để time travel.
 
 ### Câu 5
 Khung hình **đen** và khung hình **tối** khác nhau thế nào, pipeline xử lý khác nhau ra sao, bạn có đồng ý không? Dựa vào `threshold.json`: nếu chọn ngưỡng 0, 2, 6 thì bao nhiêu khung bị coi là trùng ở mỗi drive? Bạn chọn ngưỡng nào, vì sao, và ngưỡng đó phụ thuộc vào tốc độ xe thế nào?
@@ -74,7 +79,17 @@ Khung hình **đen** và khung hình **tối** khác nhau thế nào, pipeline x
 | 2 | | |
 | 6 | | |
 
-(trả lời ở đây)
+**Khung đen** là ảnh gần như không có tín hiệu (`brightness < 12`). Ở lần chạy của mình 6 khung đen của A và 4 khung đen của B đều có độ sáng **0.0**. Đó là camera hỏng hay bị che, không mang thông tin, nên bị **loại** khỏi gold. **Khung tối** (`12 ≤ brightness < 40`) vẫn có cảnh thật: B có **61** khung tối (độ sáng 12,8 – 39,6, trung bình 30,8), tập trung ở `trip-03365` (25 khung) và `trip-05297` (16 khung), là đoạn hầm/bóng râm được cấy ở giây 140–145. Khung tối chỉ được **gắn cờ `is_dark` và giữ lại**. Mình đồng ý: xe tự lái phải chạy được cả trong hầm và ban đêm, bỏ khung tối thì dataset sẽ thiên về điều kiện đẹp. Cờ `is_dark` vẫn cho phép lọc hoặc cân bằng lại sau này. Có một điểm cần lưu ý: luật `is_blurry` bỏ qua khung đen nhưng **không** bỏ qua khung tối, nên khung tối mà ít cạnh có thể bị loại nhầm vì "mờ".
+
+| dHash khác tối đa | số khung trùng, drive A | số khung trùng, drive B |
+|---|---|---|
+| 0 | 61 | 8 |
+| 2 | 149 | 53 |
+| 6 | 363 | 244 |
+
+(tổng: A 602 khung, B 644 khung; `threshold.json`)
+
+Mình chọn **giữ ngưỡng 2**. Ngưỡng 0 chỉ bắt ảnh trùng tuyệt đối. Ngưỡng 6 coi 60% khung của A (363/602) là "trùng", rõ ràng là loại cả những khung khác nhau thật. Ngưỡng 2 bắt được đoạn đứng hình (11/12 khung trong verify) mà vẫn giữ phần lớn dữ liệu. Ngưỡng này **phụ thuộc tốc độ**: ở 0–10 km/h có **50,9%** khung bị coi là trùng (55/108), vì xe gần như đứng yên nên thật sự dư thừa. Mình bất ngờ khi thấy ở ≥ 50 km/h tỷ lệ vẫn là 13,7% (104 khung, không khung nào nằm trong đoạn đứng hình), cao hơn ở 10–50 km/h (~9–10%). Ở 65 km/h và 2 khung/giây, xe đi khoảng 9 m giữa hai khung, nên đây không phải khung trùng thật. dHash 9×8 quá thô để phân biệt một đoạn cao tốc thẳng. Vì vậy ngưỡng hợp lý nên đi theo tốc độ: ngưỡng 2 (hoặc cao hơn) khi xe chậm hay đứng, ngưỡng 0–1 khi xe chạy nhanh.
 
 ## Bước 4 · Gold
 
