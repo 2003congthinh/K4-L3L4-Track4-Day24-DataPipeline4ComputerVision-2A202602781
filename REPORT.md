@@ -76,19 +76,13 @@ Khung hình **đen** và khung hình **tối** khác nhau thế nào, pipeline x
 
 | dHash khác tối đa | số khung trùng, drive A | số khung trùng, drive B |
 |---|---|---|
-| 0 | | |
-| 2 | | |
-| 6 | | |
-
-**Khung đen** là ảnh gần như không có tín hiệu (`brightness < 12`). Ở lần chạy của mình 6 khung đen của A và 4 khung đen của B đều có độ sáng **0.0**. Đó là camera hỏng hay bị che, không mang thông tin, nên bị **loại** khỏi gold. **Khung tối** (`12 ≤ brightness < 40`) vẫn có cảnh thật: B có **61** khung tối (độ sáng 12,8 – 39,6, trung bình 30,8), tập trung ở `trip-03365` (25 khung) và `trip-05297` (16 khung), là đoạn hầm/bóng râm được cấy ở giây 140–145. Khung tối chỉ được **gắn cờ `is_dark` và giữ lại**. Mình đồng ý: xe tự lái phải chạy được cả trong hầm và ban đêm, bỏ khung tối thì dataset sẽ thiên về điều kiện đẹp. Cờ `is_dark` vẫn cho phép lọc hoặc cân bằng lại sau này. Có một điểm cần lưu ý: luật `is_blurry` bỏ qua khung đen nhưng **không** bỏ qua khung tối, nên khung tối mà ít cạnh có thể bị loại nhầm vì "mờ".
-
-| dHash khác tối đa | số khung trùng, drive A | số khung trùng, drive B |
-|---|---|---|
 | 0 | 61 | 8 |
 | 2 | 149 | 53 |
 | 6 | 363 | 244 |
 
 (tổng: A 602 khung, B 644 khung; `threshold.json`)
+
+**Khung đen** là ảnh gần như không có tín hiệu (`brightness < 12`). Ở lần chạy của mình 6 khung đen của A và 4 khung đen của B đều có độ sáng **0.0**. Đó là camera hỏng hay bị che, không mang thông tin, nên bị **loại** khỏi gold. **Khung tối** (`12 ≤ brightness < 40`) vẫn có cảnh thật: B có **61** khung tối (độ sáng 12,8 – 39,6, trung bình 30,8), tập trung ở `trip-03365` (25 khung) và `trip-05297` (16 khung), là đoạn hầm/bóng râm được cấy ở giây 140–145. Khung tối chỉ được **gắn cờ `is_dark` và giữ lại**. Mình đồng ý: xe tự lái phải chạy được cả trong hầm và ban đêm, bỏ khung tối thì dataset sẽ thiên về điều kiện đẹp. Cờ `is_dark` vẫn cho phép lọc hoặc cân bằng lại sau này. Có một điểm cần lưu ý: luật `is_blurry` bỏ qua khung đen nhưng **không** bỏ qua khung tối, nên khung tối mà ít cạnh có thể bị loại nhầm vì "mờ".
 
 Mình chọn **giữ ngưỡng 2**. Ngưỡng 0 chỉ bắt ảnh trùng tuyệt đối. Ngưỡng 6 coi 60% khung của A (363/602) là "trùng", rõ ràng là loại cả những khung khác nhau thật. Ngưỡng 2 bắt được đoạn đứng hình (11/12 khung trong verify) mà vẫn giữ phần lớn dữ liệu. Ngưỡng này **phụ thuộc tốc độ**: ở 0–10 km/h có **50,9%** khung bị coi là trùng (55/108), vì xe gần như đứng yên nên thật sự dư thừa. Mình bất ngờ khi thấy ở ≥ 50 km/h tỷ lệ vẫn là 13,7% (104 khung, không khung nào nằm trong đoạn đứng hình), cao hơn ở 10–50 km/h (~9–10%). Mình mở thử cặp `drive_a-02406` / `drive_a-02411` (65 km/h, dHash khác **0 bit**): hai ảnh **khác nhau thật**, hàng rào và hàng cây bên phải đã dịch chuyển vì xe đi khoảng 9 m. Chỉ là bố cục thô (đường thẳng, xe phía trước giữ khoảng cách) gần như không đổi. dHash 9×8 không phân biệt được "camera đứng hình" với "cảnh cao tốc ít thay đổi". Vì vậy ngưỡng hợp lý nên đi theo tốc độ: ngưỡng 2 (hoặc cao hơn) khi xe chậm hay đứng, ngưỡng 0–1 khi xe chạy nhanh.
 
