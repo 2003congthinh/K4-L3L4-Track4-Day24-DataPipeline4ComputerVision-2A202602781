@@ -11,10 +11,11 @@
 
 ## Kết quả cuối
 
-- `dataset_version` của bạn: `<điền>`  (phải khớp `report/evidence/run_summary.json`)
-- Số khung hình train / val / test của bạn: `<điền>`
+- `dataset_version` của bạn: `7a789a787ab8`  (phải khớp `report/evidence/run_summary.json`)
+- Số khung hình train / val / test của bạn: **643 / 215 / 161** (tổng 1019 khung; 18 / 4 / 4 trip)
 - `report/verify.txt`: tạo bằng `python3 scripts/check_submission.py --save-verify` (phải có `27/27 checks passed`).
 - Ảnh chụp trong `report/screenshots/`: `airflow_graph.png`, `minio_lake.png`, `metabase_dashboard.png`, và ảnh bài tập sập/chạy lại (log task đỏ thấy trip của bạn).
+  Ảnh bài tập sập của mình: `crash_1_graph_red.png` (graph có 1 task đỏ), `crash_2_red_task_log.png` (log `silver_frames` map_index 17, thấy `trip-06570`), `crash_3_graph_green_after_clear.png` (graph xanh sau khi clear).
 
 ## Bước 1 · Bronze
 
@@ -110,18 +111,18 @@ Kết quả của mình: `step all --reset` lần đầu cho **`7a789a787ab8`**;
 ### Câu 8
 Đọc phần `lineage` trong `manifest.json` của dataset bạn. Trả lời "dataset này được tạo từ dữ liệu nào?" bằng chính nội dung đó. Nếu một người hỏi 3 tháng sau, thông tin nào giúp tái tạo lại đúng dataset này?
 
-Phần `lineage` trong `gold/datasets/7a789a787ab8/manifest.json` của mình:
+Phần `lineage` trong `gold/datasets/7a789a787ab8/manifest.json` của mình (lần chạy cuối `step all --reset`):
 
 ```json
 "lineage": {
   "bronze.raw_telemetry_a": 0, "bronze.raw_telemetry_b": 0, "bronze.trips_raw": 0, "bronze.video_files": 1,
-  "silver.frames": 27, "silver.telemetry": 0, "silver.frames_flagged": 0, "silver.frame_telemetry": 0,
+  "silver.frames": 25, "silver.telemetry": 0, "silver.frames_flagged": 0, "silver.frame_telemetry": 0,
   "input_video_sha256": {
     "drive_a": "636ba1a98dfc5ba665d1c935e1d2064e69f4df360ff9ffbd15795957d5e7e9aa",
     "drive_b": "bfa62703f645ff77a8578ae3fc74a00881140d38a404d43c8e2af265bbee9fdc" } }
 ```
 
-Đọc ra: dataset này gồm 1019 khung (436 từ drive A, 583 từ drive B). Nó được tạo từ **hai file video có đúng hai sha256 trên** (trùng sha256 trong `data/MANIFEST.json`) và từ telemetry bronze ở version 0 của mỗi nguồn. Khung hình lấy từ `silver.frames` **version 27**: 26 lần ghi theo trip (version 0–25) cộng 2 lần mình chạy lại `trip-06570` trong thí nghiệm idempotent, nên version tăng nhưng nội dung không đổi. Cờ và join lấy từ `silver.frames_flagged`/`frame_telemetry` version 0. Luật lọc nằm trong `rules`: bỏ `is_black, is_blurry, is_near_dup, not sync_ok`, chia theo trip, phân tầng theo drive, thứ tự md5.
+Đọc ra: dataset này gồm 1019 khung (436 từ drive A, 583 từ drive B). Nó được tạo từ **hai file video có đúng hai sha256 trên** (trùng sha256 trong `data/MANIFEST.json`) và từ telemetry bronze ở version 0 của mỗi nguồn. Khung hình lấy từ `silver.frames` **version 25**, tức đúng 26 lần ghi theo trip (version 0–25). Sau thí nghiệm idempotent, manifest cũ ghi `silver.frames: 27` (thêm 2 lần chạy lại `trip-06570`), nhưng `dataset_version` và `manifest_sha256 4db243f2…` không đổi: version của bảng tăng, còn nội dung thì giống hệt. Cờ và join lấy từ `silver.frames_flagged`/`frame_telemetry` version 0. Luật lọc nằm trong `rules`: bỏ `is_black, is_blurry, is_near_dup, not sync_ok`, chia theo trip, phân tầng theo drive, thứ tự md5.
 
 Nếu ba tháng sau có người hỏi, để tái tạo đúng dataset cần: (1) hai video theo sha256 và các CSV gốc (bronze giữ nguyên, có `_batch_id`); (2) các version Delta ở trên, đọc bằng time travel (`DeltaTable(..., version=27)`) kể cả khi bảng đã được ghi tiếp; (3) commit git của mã `dbt/` (ngưỡng trong `dbt_project.yml`: `dark_luma 12`, `blur_var 40`, `dup_hamming 2`, `sync_tol_ms 150`, `split 0.70/0.15`); (4) **MSSV `2A202602781`** dùng làm muối khi chia. Cuối cùng, so `dataset_version` và `manifest_sha256` để chứng minh đã tái tạo đúng.
 
@@ -153,10 +154,49 @@ Mình ước lượng bằng số của chính lab: 26 trip (621,5 s video) đư
 
 Câu SQL bạn thêm vào dashboard và điều nó cho biết:
 
-(trả lời ở đây)
+**Câu hỏi 1: tỷ lệ khung bị loại theo từng trip** (card "Câu hỏi riêng: tỷ lệ khung bị loại theo từng trip", ảnh `metabase_dashboard.png`):
+
+```sql
+select trip_id, drive_id, split, lighting, frames, frames_kept,
+       round(100.0 * (frames - frames_kept) / frames, 1) as pct_dropped, avg_speed_kmh
+from marts.mart_trip_summary
+order by pct_dropped desc
+```
+
+Bốn trip bị loại nhiều nhất đều thuộc drive A: `trip-04622` 56,7% (26/60 khung giữ lại, 67 km/h), `trip-03904` 50%, `trip-02086` 46,7%, `trip-08888` 40%. Mình tra lý do trong `silver.silver_frame_telemetry`: **toàn bộ** số khung bị loại của bốn trip này là `is_near_dup` (không có khung đen, mờ hay mất đồng bộ). `trip-03904` (giây 147–158) chứa đoạn camera đứng hình được cấy (150–156 s), và `trip-08888` chạy 6 km/h, nên hai trường hợp này là trùng thật. Nhưng `trip-04622` (giây 240–270, **67 km/h**, không có lỗi cấy nào) mất 34 khung vì dHash coi là trùng. Đây là điều dashboard giúp mình phát hiện: ngưỡng dHash cố định đang loại nhầm dữ liệu đường cao tốc (xem thêm câu 5).
+
+**Câu hỏi 2 (vận hành): tập test có cùng phân bố tốc độ với train không?**
+
+```sql
+select drive_id, split, count(*) as frames, round(avg(speed_kmh)::numeric, 1) as avg_kmh,
+       round(100.0 * avg(case when speed_kmh < 10 then 1 else 0 end)::numeric, 1) as pct_under_10kmh
+from marts.mart_frame_gallery
+group by 1, 2
+order by 1, case split when 'train' then 1 when 'val' then 2 else 3 end
+```
+
+Kết quả: ở drive A, test có trung bình **11,9 km/h** và **40,4%** khung dưới 10 km/h, trong khi val là 64,1 km/h với 0% khung chậm, còn train là 36,6 km/h. Drive B thì test (86 km/h) nhanh hơn train (65,9 km/h). Chia theo trip là đúng để chống rò rỉ, nhưng với chỉ 2 trip mỗi split, **phân bố tốc độ lệch mạnh**: điểm test của drive A chủ yếu đo hành vi chạy chậm. Muốn split đại diện hơn thì nên phân tầng thêm theo dải tốc độ hoặc ánh sáng khi xếp trip (vẫn giữ nguyên tắc một trip một split).
+
+## Thí nghiệm riêng (điểm cộng): độ nhạy của `sync_tol_ms`
+
+Mình chạy lại `silver_frame_telemetry` và `gold_dataset_frames` với `--vars '{sync_tol_ms: X}'` (không sửa file `dbt_project.yml`, chạy xong thì build lại với giá trị gốc 150, không publish). Bằng chứng: `report/evidence/own_experiment_sync_tol.json`.
+
+| `sync_tol_ms` | khung `sync_lost` | % | khung gold | train / val / test | gap lớn nhất trong gold | dbt test |
+|---|---|---|---|---|---|---|
+| 50 | 600 | 48,15% | 538 | 352 / 98 / 88 | 20 ms | WARN `sync_lost` > 5% |
+| 100 | 324 | 26,0% | 762 | 489 / 150 / 123 | 100 ms | WARN `sync_lost` > 5% |
+| **150** (gốc) | 14 | 1,12% | **1019** | 643 / 215 / 161 | 120 ms | PASS |
+| 300 | 14 | 1,12% | 1019 | 643 / 215 / 161 | 120 ms | PASS |
+| 1000 | 11 | 0,88% | 1022 | 646 / 215 / 161 | **884 ms** | PASS |
+
+Giải thích: telemetry lấy mẫu với chu kỳ trung vị **100 ms** (p95 khoảng 127 ms) ở cả hai drive, nên khi join ASOF thì khoảng cách khung–telemetry nằm trong 0..~128 ms. Ngưỡng dưới chu kỳ lấy mẫu (50, 100 ms) loại oan gần nửa dataset, và test `max_share` của `sync_lost` đã cảnh báo đúng. Từ 150 đến 300 ms kết quả không đổi (vùng ổn định). Nới tới 1000 ms chỉ thêm 3 khung, nhưng đó là các khung nằm trong đoạn cảm biến mất tín hiệu, mang tốc độ "cũ" tới 884 ms. Với xe 70 km/h, 884 ms là khoảng 17 m, tức nhãn sai. Vì vậy 150 ms là lựa chọn đúng: vừa trên p95 của chu kỳ lấy mẫu, vừa đủ chặt để chặn nhãn cũ. Nếu đổi ngưỡng thì `dataset_version` cũng đổi (1022 khung thay vì 1019), đúng như thiết kế băm nội dung.
 
 ## Nhìn lại
 
 Điều bạn thấy bất ngờ nhất, điều gì còn chưa rõ, và một lỗi dữ liệu mà bạn nghĩ pipeline **chưa** bắt được (nếu có). Tối đa 8 dòng.
 
-(trả lời ở đây)
+- **Bất ngờ nhất**: lần chạy sập chỉ làm đỏ đúng một task, và sau khi clear thì **không có commit nào bị nhân đôi** (`silver.frames` vẫn 26 lần ghi, 1246 dòng, version giữ nguyên `7a789a787ab8`). Mình cũng không ngờ là 4 lần chạy lại toàn bộ từ lake trống đều ra cùng một `dataset_version`.
+- **Lỗi pipeline chưa bắt đúng**: dHash 9×8 với ngưỡng 2 coi là "trùng" cả khung xe đang chạy 67 km/h (`trip-04622` mất 34/60 khung, 13,7% khung ≥ 50 km/h bị loại). Đây là dương tính giả, làm dataset thiếu dữ liệu cao tốc. Ngoài ra `is_blurry` không loại trừ khung tối, và split theo trip với 2 trip/split làm test của drive A lệch về tốc độ thấp (40% khung < 10 km/h).
+- **Một lỗi dữ liệu chưa được kiểm**: 15 dòng telemetry **đến sai thứ tự** được cấy trong dữ liệu không có luật hay test nào báo; dbt chỉ `order by ts` nên chúng bị "sửa" âm thầm mà không được đếm. Cũng không có test nào so độ dài video với khoảng thời gian telemetry.
+- **Còn chưa rõ**: vì sao frame join dùng "telemetry gần nhất **trước** khung" (ASOF `>=`) thay vì gần nhất hai phía. Cách này luôn trễ tới một chu kỳ lấy mẫu (trung bình 66–73 ms).
+- **Môi trường Windows**: mình phải chuyển các file `.sh` về LF (`airflow-entrypoint.sh` bị CRLF làm container lỗi, và hash của file được bảo vệ sai), chạy `lab.sh` với `MSYS_NO_PATHCONV=1`, và tính trip bằng phần số của MSSV. Claude hỗ trợ mình dò các lỗi môi trường này, kiểm tra số liệu và chạy thử.

@@ -1,0 +1,72 @@
+{
+  "experiment": "own_sync_tol_ms",
+  "student_id": "2A202602781",
+  "ran_at": "2026-10-12T15:17:28.225152+00:00",
+  "how": "dbt run/test --select silver_frame_telemetry gold_dataset_frames --vars '{sync_tol_ms: X}', then restored the default (150); nothing published",
+  "telemetry_period_ms_median_p95": "median 100 ms, p95 127-128 ms",
+  "telemetry_period_ms_median": {
+    "drive_a": 100,
+    "drive_b": 100
+  },
+  "results": [
+    {
+      "sync_tol_ms": 50,
+      "sync_lost": 600,
+      "pct_lost": 48.15,
+      "gold_frames": 538,
+      "train": 352,
+      "val": 98,
+      "test": 88,
+      "max_gap_in_gold_ms": 20,
+      "dbt_test": "PASS=7 WARN=1 (sync_lost max_share 5%)"
+    },
+    {
+      "sync_tol_ms": 100,
+      "sync_lost": 324,
+      "pct_lost": 26.0,
+      "gold_frames": 762,
+      "train": 489,
+      "val": 150,
+      "test": 123,
+      "max_gap_in_gold_ms": 100,
+      "dbt_test": "PASS=7 WARN=1 (sync_lost max_share 5%)"
+    },
+    {
+      "sync_tol_ms": 150,
+      "sync_lost": 14,
+      "pct_lost": 1.12,
+      "gold_frames": 1019,
+      "train": 643,
+      "val": 215,
+      "test": 161,
+      "max_gap_in_gold_ms": 120,
+      "dbt_test": "PASS=8"
+    },
+    {
+      "sync_tol_ms": 300,
+      "sync_lost": 14,
+      "pct_lost": 1.12,
+      "gold_frames": 1019,
+      "train": 643,
+      "val": 215,
+      "test": 161,
+      "max_gap_in_gold_ms": 120,
+      "dbt_test": "PASS=8"
+    },
+    {
+      "sync_tol_ms": 1000,
+      "sync_lost": 11,
+      "pct_lost": 0.88,
+      "gold_frames": 1022,
+      "train": 646,
+      "val": 215,
+      "test": 161,
+      "max_gap_in_gold_ms": 884,
+      "dbt_test": "PASS=8"
+    }
+  ],
+  "telemetry_period_ms_p95": {
+    "drive_a": 127,
+    "drive_b": 128
+  }
+}
